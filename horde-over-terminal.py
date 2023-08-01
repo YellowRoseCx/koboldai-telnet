@@ -2,6 +2,7 @@ import json
 import time
 user = "User:"
 bot = "Bot:"
+current_id = None
 ENDPOINT = "https://horde.koboldai.net"
 conversation_history = []
 apikey = "0000000000"
@@ -27,11 +28,15 @@ def get_prompt(user_msg):
         "prompt": f"{user_msg}",
     }
 def getResponse():
+    global current_id
     while True:
         try:
             response = make_url_request((f"{ENDPOINT}/api/v2/generate/text/status/{current_id}"), method='GET')
             if response and response.get('done', False):
-                response = make_url_request((f"{ENDPOINT}/api/v2/generate/text/status/{current_id}"), method='GET')
+                if response['generations'][0]['text'] == "no valid completions":
+                    print(f"Received 'no valid completions'. Retrying...")
+                    time.sleep(2)
+                    continue 
                 return response
             else:
                 time.sleep(1)
@@ -39,6 +44,17 @@ def getResponse():
             print(f"An error occurred during polling: {e}")
             return None
 
+def getGenID():
+    global current_id
+    try:
+        pop = make_url_request((f"{ENDPOINT}/api/v2/generate/text/async"), prompt)
+        if not pop:
+            print(f"Failed to submit job to {ENDPOINT}. Waiting 5 seconds...")
+            time.sleep(5)   
+        current_id = pop['id']
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        
 def make_url_request(url, data=None, method='POST'):
     import urllib.request
     try:
@@ -74,26 +90,14 @@ while True:
             continue
         fullmsg = (f"{conversation_history[-1] if conversation_history else ''}{user} {user_message}\n{bot} ")
         prompt = get_prompt(fullmsg)
-        current_id = None
-        current_payload = None
-        current_generation = None
-        pop = make_url_request((f"{ENDPOINT}/api/v2/generate/text/async"), prompt)
-        print(f"{pop}\n")
-        if not pop:
-            print(f"Failed to fetch job from {ENDPOINT}. Waiting 5 seconds...")
-            time.sleep(5)
-            continue
-        current_id = pop['id']
+        getGenID()
         response = getResponse()
-        response_text = None
         if response:
             gen = response['generations']
             text = gen[0]['text']
             response_text = text.split('\n')[0].replace("  ", " ")
             conversation_history.append(f"{fullmsg}{response_text}\n")
             print(f"{bot} {response_text}")
-        if response_text == ' no valid completions':
-            print(f"{response}")
     except Exception as e:
         print(f"An error occurred: {e}")
         print(f"\n-------\n{response}")
